@@ -75,6 +75,7 @@ func (c *Coverer) runWatchClient(ctx context.Context) {
 		}
 		stream, err := c.client.Watch(ctx, &rpc.WatchRequest{
 			CovererId:     c.self,
+			AgentEndpoint: c.agentEndpoint,
 			SchemaVersion: int32(model.SchemaVersion),
 		})
 		if err != nil {

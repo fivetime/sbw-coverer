@@ -33,15 +33,16 @@ import (
 // and the canary memory (coverer-local so an attribute-less canary withdrawal is still
 // recognised).
 type Coverer struct {
-	self   string                  // = WatchRequest.CovererId; stamped on every Report
-	client rpc.ServerCovererClient // the sbw-server (Watch downlink / Register relay)
-	guard  *guard.Guard            // RIB-survival /32 mirror (built from the lossy tap)
-	srv    *ribtap.Server          // the embedded GoBGP tap
-	sink   *ribtap.CoverageSink    // applyCoverage drives this to (de)tap covered edges
-	rc     *reportClient           // the long-lived Report client-stream (stamps CovererId)
-	agents *grpcsrv.Server         // the agent-facing AgentService transport
-	met    *metrics.Metrics
-	log    *slog.Logger
+	self          string                  // = WatchRequest.CovererId; stamped on every Report
+	agentEndpoint string                  // = WatchRequest.AgentEndpoint; where agents dial THIS coverer
+	client        rpc.ServerCovererClient // the sbw-server (Watch downlink / Register relay)
+	guard         *guard.Guard            // RIB-survival /32 mirror (built from the lossy tap)
+	srv           *ribtap.Server          // the embedded GoBGP tap
+	sink          *ribtap.CoverageSink    // applyCoverage drives this to (de)tap covered edges
+	rc            *reportClient           // the long-lived Report client-stream (stamps CovererId)
+	agents        *grpcsrv.Server         // the agent-facing AgentService transport
+	met           *metrics.Metrics
+	log           *slog.Logger
 
 	// canary memory (coverer-local). A BGP withdrawal carries no attributes, so the
 	// canary's attribute-less withdrawal is recognised by the prefix remembered when it
@@ -57,6 +58,7 @@ type Coverer struct {
 // up as an AGENT_REPORT CovererReport through the single reportClient.Send chokepoint.
 func New(
 	self string,
+	agentEndpoint string,
 	client rpc.ServerCovererClient,
 	g *guard.Guard,
 	srv *ribtap.Server,
@@ -70,17 +72,18 @@ func New(
 		log = slog.New(slog.DiscardHandler)
 	}
 	c := &Coverer{
-		self:       self,
-		client:     client,
-		guard:      g,
-		srv:        srv,
-		sink:       sink,
-		rc:         rc,
-		met:        met,
-		log:        log,
-		canaryLC:   canaryLC,
-		hasCanary:  canaryLC != (model.LargeCommunity{}),
-		canarySeen: make(map[canaryKey]struct{}),
+		self:          self,
+		agentEndpoint: agentEndpoint,
+		client:        client,
+		guard:         g,
+		srv:           srv,
+		sink:          sink,
+		rc:            rc,
+		met:           met,
+		log:           log,
+		canaryLC:      canaryLC,
+		hasCanary:     canaryLC != (model.LargeCommunity{}),
+		canarySeen:    make(map[canaryKey]struct{}),
 	}
 
 	// The agent-facing AgentService. WithReport turns the in-proc relayReport into an
@@ -136,16 +139,6 @@ func (c *Coverer) onResync(edge model.EdgeID) {
 	}
 }
 
-// reportDeathVote routes a tap death/revive signal up as a DEATH_VOTE CovererReport.
-// down=true is a hard death (PeerDown), down=false clears it (PeerUp / canary-up).
-//
-// NOTE(#6, soft canary): the CovererReport proto carries only `down bool` — no soft/hard
-// discriminator — and the server-half Report handler maps DEATH_VOTE strictly to
-// HardDown/HardUp. So the SOFT canary signal cannot be distinguished from a hard PeerDown
-// over the current contract. Until a `soft` bit (or a CANARY kind) is added to the proto
-// AND a server-side CanaryDown/CanaryUp path exists, the canary path is reported through
-// this same DEATH_VOTE (see taphandler.go) — a known regression flagged in the DESIGN
-// risks, NOT a silent drop.
 // reportDeathVote sends a DEATH_VOTE. soft=false is a HARD session vote (PeerDown/Up →
 // the server's FailoverQuorum); soft=true is a SOFT canary signal (canary route
 // withdrawn/restored → the server's CanaryDown/CanaryUp, which only fails over together

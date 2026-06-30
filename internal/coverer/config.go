@@ -29,6 +29,15 @@ type Config struct {
 	// (Register/Subscribe/Report). Was the monolith's GRPCListenAddr. Default ":1791".
 	AgentGRPCListenAddr string `json:"agent_grpc_listen_addr"`
 
+	// AgentAdvertiseAddr is the EXTERNALLY-ROUTABLE address agents use to reach THIS
+	// coverer's AgentService (e.g. "coverer-0.sbw-system:1791") — distinct from the bind
+	// AgentGRPCListenAddr (":1791"). Sent up as WatchRequest.agent_endpoint so the server
+	// can hand it back in the agent's coverer-assignment (Register reply / REHOME) and the
+	// agent homes to its PRIMARY coverer. Empty is allowed (K=1 reaches its sole coverer via
+	// the load-balanced bootstrap), but for K>1 it MUST be set or agents cannot re-home off
+	// the bootstrap onto their primary. Empty → no agent_endpoint advertised.
+	AgentAdvertiseAddr string `json:"agent_advertise_addr"`
+
 	// ServerAddr is the sbw-server dial target (rpc.ServerCoverer). REQUIRED — an empty
 	// value is FATAL: with no server the coverer has nowhere to Watch coverage / Report
 	// votes, so it can do nothing useful.
@@ -165,6 +174,7 @@ func (c *Config) applyEnv() error {
 	}
 
 	c.AgentGRPCListenAddr = config.String("AGENT_GRPC_LISTEN_ADDR", c.AgentGRPCListenAddr)
+	c.AgentAdvertiseAddr = config.String("AGENT_ADVERTISE_ADDR", c.AgentAdvertiseAddr)
 	c.ServerAddr = config.String("SBW_SERVER_ADDR", c.ServerAddr)
 	c.MetricsListenAddr = config.String("METRICS_LISTEN_ADDR", c.MetricsListenAddr)
 	return nil

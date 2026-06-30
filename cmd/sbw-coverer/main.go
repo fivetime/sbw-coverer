@@ -149,7 +149,7 @@ func main() {
 	resolve := func(e model.EdgeID) (ribtap.Peer, bool) { p, ok := peerByEdge[e]; return p, ok }
 	sink := ribtap.NewCoverageSink(srv, resolve)
 
-	cov := coverer.New(self, client, g, srv, sink, rc, met, canaryLC, log)
+	cov := coverer.New(self, cfg.AgentAdvertiseAddr, client, g, srv, sink, rc, met, canaryLC, log)
 
 	// Drive the tap producer into the guard + Report fusion + the periodic adj-in
 	// reconciliation (T-609; re-points off srv.Peers() not a server-side registry).
