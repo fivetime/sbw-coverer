@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/fivetime/sbw-contract/model"
+
 	"github.com/fivetime/sbw-coverer/internal/ribevent"
 )
 
@@ -19,14 +20,21 @@ func peerDown(e model.EdgeID) ribevent.Event { return ribevent.Event{Kind: ribev
 func eor(e model.EdgeID, f model.Family) ribevent.Event {
 	return ribevent.Event{Kind: ribevent.EOR, Edge: e, Family: f}
 }
+
 func canaryUp(e model.EdgeID) ribevent.Event {
-	return ribevent.Event{Kind: ribevent.PathUpdate, Edge: e, Family: model.FamilyIPv4,
-		Prefix: mustPfx("10.255.0.2/32"), LargeCommunities: []model.LargeCommunity{canaryLC}}
+	return ribevent.Event{
+		Kind: ribevent.PathUpdate, Edge: e, Family: model.FamilyIPv4,
+		Prefix: mustPfx("10.255.0.2/32"), LargeCommunities: []model.LargeCommunity{canaryLC},
+	}
 }
+
 func canaryGone(e model.EdgeID) ribevent.Event {
-	return ribevent.Event{Kind: ribevent.Withdrawal, Edge: e,
-		Prefix: mustPfx("10.255.0.2/32"), LargeCommunities: []model.LargeCommunity{canaryLC}}
+	return ribevent.Event{
+		Kind: ribevent.Withdrawal, Edge: e,
+		Prefix: mustPfx("10.255.0.2/32"), LargeCommunities: []model.LargeCommunity{canaryLC},
+	}
 }
+
 func host(e model.EdgeID, p string) ribevent.Event {
 	pfx := mustPfx(p)
 	f := model.FamilyIPv4
@@ -35,6 +43,7 @@ func host(e model.EdgeID, p string) ribevent.Event {
 	}
 	return ribevent.Event{Kind: ribevent.PathUpdate, Edge: e, Family: f, Prefix: pfx}
 }
+
 func hostGone(e model.EdgeID, p string) ribevent.Event {
 	return ribevent.Event{Kind: ribevent.Withdrawal, Edge: e, Prefix: mustPfx(p)}
 }
@@ -182,8 +191,10 @@ func TestCanaryIdentifiedByCommunityNotPrefix(t *testing.T) {
 	g := New(canaryLC)
 	g.OnEvent(peerUp(edge))
 	// A canary on an unexpected prefix still counts (identified by LC).
-	g.OnEvent(ribevent.Event{Kind: ribevent.PathUpdate, Edge: edge, Family: model.FamilyIPv4,
-		Prefix: mustPfx("192.0.2.123/32"), LargeCommunities: []model.LargeCommunity{canaryLC}})
+	g.OnEvent(ribevent.Event{
+		Kind: ribevent.PathUpdate, Edge: edge, Family: model.FamilyIPv4,
+		Prefix: mustPfx("192.0.2.123/32"), LargeCommunities: []model.LargeCommunity{canaryLC},
+	})
 	g.OnEvent(eor(edge, model.FamilyIPv4))
 	if !g.ViewValid(edge, model.FamilyIPv4) {
 		t.Error("canary identified by community must validate the view")

@@ -246,8 +246,10 @@ func TestReport(t *testing.T) {
 	cli, done := dial(t, s)
 	defer done()
 
-	rep := model.EdgeReport{SchemaVersion: model.SchemaVersion, EdgeID: "edge-2", Generation: 3,
-		Health: model.HealthReport{EdgeID: "edge-2", State: model.HealthHealthy}}
+	rep := model.EdgeReport{
+		SchemaVersion: model.SchemaVersion, EdgeID: "edge-2", Generation: 3,
+		Health: model.HealthReport{EdgeID: "edge-2", State: model.HealthHealthy},
+	}
 	payload, _ := json.Marshal(rep)
 	if _, err := cli.Report(context.Background(), &rpc.ReportRequest{EdgeId: "edge-2", Generation: 3, Payload: payload}); err != nil {
 		t.Fatal(err)

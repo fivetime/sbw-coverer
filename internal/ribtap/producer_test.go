@@ -9,6 +9,7 @@ import (
 	"github.com/osrg/gobgp/v4/pkg/packet/bgp"
 
 	"github.com/fivetime/sbw-contract/model"
+
 	"github.com/fivetime/sbw-coverer/internal/ribevent"
 )
 

@@ -12,6 +12,7 @@ import (
 	"github.com/osrg/gobgp/v4/pkg/server"
 
 	"github.com/fivetime/sbw-contract/model"
+
 	"github.com/fivetime/sbw-coverer/internal/ribevent"
 )
 

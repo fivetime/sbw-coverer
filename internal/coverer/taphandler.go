@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/fivetime/sbw-contract/model"
+
 	"github.com/fivetime/sbw-coverer/internal/ribevent"
 )
 

@@ -22,6 +22,7 @@ import (
 	"github.com/fivetime/sbw-contract/metrics"
 	"github.com/fivetime/sbw-contract/model"
 	"github.com/fivetime/sbw-contract/rpc"
+
 	"github.com/fivetime/sbw-coverer/internal/grpcsrv"
 	"github.com/fivetime/sbw-coverer/internal/guard"
 	"github.com/fivetime/sbw-coverer/internal/ribtap"

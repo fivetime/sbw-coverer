@@ -27,11 +27,12 @@ import (
 	"github.com/fivetime/sbw-contract/metrics"
 	"github.com/fivetime/sbw-contract/model"
 	"github.com/fivetime/sbw-contract/rpc"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+
 	"github.com/fivetime/sbw-coverer/internal/coverer"
 	"github.com/fivetime/sbw-coverer/internal/guard"
 	"github.com/fivetime/sbw-coverer/internal/ribtap"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 )
 
 func main() {
