@@ -115,21 +115,25 @@ func New(
 // listener (rpc.RegisterAgentServiceServer).
 func (c *Coverer) Agents() *grpcsrv.Server { return c.agents }
 
-// onSubscribe is the agent on-connect hook. In the monolith this rendered+pushed the
-// agent's current desired state; the split coverer cannot render (no store, no
-// orchestrator) and the ServerCoverer contract has no per-edge "resync this edge now"
-// RPC. So it is BEST-EFFORT: the reconnecting agent recovers its desired-state via the
-// server's periodic Watch re-render / drift sweep + the agent's own generation-gap
-// detection. (Convergence is slower than the monolith — a known gap, see DESIGN risks.)
+// onSubscribe is the agent on-connect hook. The coverer cannot render (no store, no
+// orchestrator), so it REPORTS the subscribe up as AGENT_SUBSCRIBE and the server pushes
+// edge a FULL desired-state snapshot — the cross-process replacement for the monolith's
+// grpcsrv onSubscribe→RerenderEdge. Without this, a server push that raced ahead of the
+// agent's subscribe is dropped here (ErrNotSubscribed) and the agent is stuck awaiting a
+// full resync that never comes (the onSubscribe-ordering gap, found in the lab e2e).
 func (c *Coverer) onSubscribe(edge model.EdgeID) {
-	c.log.Debug("agent subscribed; relying on server periodic re-render for initial sync", "edge", edge)
+	if err := c.rc.Send(&rpc.CovererReport{Kind: rpc.CovererReport_AGENT_SUBSCRIBE, EdgeId: string(edge)}); err != nil {
+		c.log.Warn("agent-subscribe report failed", "edge", edge, "err", err)
+	}
 }
 
-// onResync is the dropped-delta resync hook. Same constraint as onSubscribe: the coverer
-// cannot render, so it cannot satisfy the resync locally. Best-effort log; the server's
-// periodic re-render + the agent's generation-gap detection recover the lost deltas.
+// onResync is the dropped-delta resync hook. Same as onSubscribe: the coverer cannot render,
+// so it asks the server (AGENT_SUBSCRIBE) to push a FULL snapshot that supersedes the
+// dropped deltas. CovererId is stamped by rc.Send.
 func (c *Coverer) onResync(edge model.EdgeID) {
-	c.log.Debug("delta dropped under overflow; relying on server re-render for resync", "edge", edge)
+	if err := c.rc.Send(&rpc.CovererReport{Kind: rpc.CovererReport_AGENT_SUBSCRIBE, EdgeId: string(edge)}); err != nil {
+		c.log.Warn("agent-resync report failed", "edge", edge, "err", err)
+	}
 }
 
 // reportDeathVote routes a tap death/revive signal up as a DEATH_VOTE CovererReport.
