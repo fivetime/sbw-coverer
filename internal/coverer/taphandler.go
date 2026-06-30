@@ -19,13 +19,13 @@ import (
 //   - guard.OnEvent                         → STAYS (the lossy /32 mirror is coverer-side)
 //   - PeerDown → HardDown                   → DEATH_VOTE{down:true}
 //   - canary Withdrawal → CanaryDown        → DEATH_VOTE{down:true}  (#6: the proto has no
-//        soft/hard bit, so the SOFT canary cannot be distinguished from a hard PeerDown
-//        over the current contract — a known regression flagged in DESIGN risks, routed
-//        through a Report rather than dropped)
+//     soft/hard bit, so the SOFT canary cannot be distinguished from a hard PeerDown
+//     over the current contract — a known regression flagged in DESIGN risks, routed
+//     through a Report rather than dropped)
 //   - canary PathUpdate → CanaryUp/HardUp   → DEATH_VOTE{down:false}
 //   - host /32 add/remove → onHostChange    → MEMBER_EDGE, GATED by the guard verdict
-//        (HasHost for add, ShouldWithdraw for remove); the resulting Down bit IS the
-//        verdict the server consumes for render suppression + member-up/down + locality.
+//     (HasHost for add, ShouldWithdraw for remove); the resulting Down bit IS the
+//     verdict the server consumes for render suppression + member-up/down + locality.
 //   - EOR → markOrRerender                   → MEMBER_EDGE full-snapshot (HostsByFamily)
 //
 // memberHome / Agents.IsSubscribed K-dedup / emitMemberUp/Down / markOrRerender all
@@ -41,15 +41,16 @@ func (c *Coverer) TapHandler() ribevent.Handler {
 		switch e.Kind {
 		case ribevent.PeerDown:
 			// Session gone → HARD death vote.
-			c.reportDeathVote(e.Edge, true)
+			c.reportDeathVote(e.Edge, true, false)
 		case ribevent.Withdrawal:
 			// A BGP withdrawal carries no attributes, so the canary is recognised by the
 			// remembered prefix, not its large community.
 			if c.isCanary(e.LargeCommunities) || c.forgetCanary(e.Edge, e.Prefix) {
-				// Canary gone while the session is up → SOFT signal in the design, but the
-				// contract can only carry a hard DEATH_VOTE (#6). Routed, not dropped.
-				c.log.Warn("canary withdrawn → DEATH_VOTE (soft signal; #6 contract gap)", "edge", e.Edge, "prefix", e.Prefix)
-				c.reportDeathVote(e.Edge, true)
+				// Canary gone while the session is up → SOFT signal (DESIGN-liveness §4.7):
+				// the server's CanaryDown only fails over together with an agent data-plane-
+				// death report, never on its own.
+				c.log.Warn("canary withdrawn → soft CanaryDown", "edge", e.Edge, "prefix", e.Prefix)
+				c.reportDeathVote(e.Edge, true, true)
 			} else if model.IsHost(e.Prefix) && c.viewReplayed(e.Edge, e.Family) {
 				// Host /32 gone (post-EOR only). GATE on the guard's trustworthy-absence
 				// verdict (route-withdrawal veto stays coverer-side; the verdict is what the
@@ -61,8 +62,9 @@ func (c *Coverer) TapHandler() ribevent.Handler {
 		case ribevent.PathUpdate:
 			if c.isCanary(e.LargeCommunities) {
 				c.log.Info("canary up (remembered)", "edge", e.Edge, "prefix", e.Prefix)
-				c.rememberCanary(e.Edge, e.Prefix) // so its attribute-less withdrawal is recognised
-				c.reportDeathVote(e.Edge, false)   // canary back → clear the hard vote
+				c.rememberCanary(e.Edge, e.Prefix)      // so its attribute-less withdrawal is recognised
+				c.reportDeathVote(e.Edge, false, true)  // soft CanaryUp (clears the soft signal)
+				c.reportDeathVote(e.Edge, false, false) // canary back ⇒ session up → clear the hard vote
 			} else if model.IsHost(e.Prefix) && c.viewReplayed(e.Edge, e.Family) {
 				// Gate the per-host fusion on a VALID view (post-EOR). A tap (re)connect
 				// replays the WHOLE adj-in as PathUpdates; firing per replayed host would

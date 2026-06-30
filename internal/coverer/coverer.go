@@ -32,13 +32,13 @@ import (
 // and the canary memory (coverer-local so an attribute-less canary withdrawal is still
 // recognised).
 type Coverer struct {
-	self   string                   // = WatchRequest.CovererId; stamped on every Report
-	client rpc.ServerCovererClient  // the sbw-server (Watch downlink / Register relay)
-	guard  *guard.Guard             // RIB-survival /32 mirror (built from the lossy tap)
-	srv    *ribtap.Server           // the embedded GoBGP tap
-	sink   *ribtap.CoverageSink     // applyCoverage drives this to (de)tap covered edges
-	rc     *reportClient            // the long-lived Report client-stream (stamps CovererId)
-	agents *grpcsrv.Server          // the agent-facing AgentService transport
+	self   string                  // = WatchRequest.CovererId; stamped on every Report
+	client rpc.ServerCovererClient // the sbw-server (Watch downlink / Register relay)
+	guard  *guard.Guard            // RIB-survival /32 mirror (built from the lossy tap)
+	srv    *ribtap.Server          // the embedded GoBGP tap
+	sink   *ribtap.CoverageSink    // applyCoverage drives this to (de)tap covered edges
+	rc     *reportClient           // the long-lived Report client-stream (stamps CovererId)
+	agents *grpcsrv.Server         // the agent-facing AgentService transport
 	met    *metrics.Metrics
 	log    *slog.Logger
 
@@ -141,13 +141,18 @@ func (c *Coverer) onResync(edge model.EdgeID) {
 // AND a server-side CanaryDown/CanaryUp path exists, the canary path is reported through
 // this same DEATH_VOTE (see taphandler.go) — a known regression flagged in the DESIGN
 // risks, NOT a silent drop.
-func (c *Coverer) reportDeathVote(edge model.EdgeID, down bool) {
+// reportDeathVote sends a DEATH_VOTE. soft=false is a HARD session vote (PeerDown/Up →
+// the server's FailoverQuorum); soft=true is a SOFT canary signal (canary route
+// withdrawn/restored → the server's CanaryDown/CanaryUp, which only fails over together
+// with an agent data-plane-death report). CovererId is stamped centrally by rc.Send.
+func (c *Coverer) reportDeathVote(edge model.EdgeID, down, soft bool) {
 	if err := c.rc.Send(&rpc.CovererReport{
 		Kind:   rpc.CovererReport_DEATH_VOTE,
 		EdgeId: string(edge),
 		Down:   down,
+		Soft:   soft,
 	}); err != nil {
-		c.log.Warn("report death vote failed", "edge", edge, "down", down, "err", err)
+		c.log.Warn("report death vote failed", "edge", edge, "down", down, "soft", soft, "err", err)
 	}
 }
 
