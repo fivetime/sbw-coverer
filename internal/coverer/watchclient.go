@@ -105,16 +105,22 @@ func (c *Coverer) runWatchClient(ctx context.Context) {
 			backoff = nextBackoff(backoff)
 			continue
 		}
-		fails = 0 // Watch opened → reset the recreate counter
+		// Watch OPENED — but a half-open ClientConn (total-restart) hands back a stream that
+		// never delivers, so DON'T reset the recreate counter until REAL data arrives; a cycle
+		// that opens and receives nothing counts as a failure too (else the stuck conn escapes
+		// the recreate logic by "opening" successfully every time).
 		wc := &watchConsumer{cov: c, agents: c.agents, workers: map[model.EdgeID]*edgeWorker{}}
 		// Run a per-connection context so the edge workers are reaped on a stream drop.
 		connCtx, cancel := context.WithCancel(ctx)
+		gotData := false
 		for {
 			a, err := stream.Recv()
 			if err != nil {
 				c.log.Warn("watch: recv failed; reconnecting", "err", err)
 				break
 			}
+			gotData = true
+			fails = 0                 // real data → the link is healthy
 			backoff = watchBackoffMin // clean Recv → reset backoff
 			switch a.Kind {
 			case rpc.Assignment_COVERAGE:
@@ -127,6 +133,17 @@ func (c *Coverer) runWatchClient(ctx context.Context) {
 			}
 		}
 		cancel() // drop this connection's edge workers
+		if !gotData {
+			// Opened but received nothing (half-open / instant drop) — same as an open failure:
+			// count it and recreate the conn after the threshold to force a fresh resolution.
+			fails++
+			if fails >= watchRecreateThreshold {
+				if r, ok := c.client.(recreatable); ok {
+					r.Recreate()
+				}
+				fails = 0
+			}
+		}
 		if !sleepCtx(ctx, backoff) {
 			return
 		}
