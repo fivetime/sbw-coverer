@@ -89,7 +89,11 @@ func main() {
 	// app-level 5s Watch backoff is moot when the underlying ClientConn is in a 120s backoff)
 	// until a manual pod restart resets it. Capping it lets the coverer re-establish within ~5s
 	// of the server becoming reachable.
-	conn, err := grpc.NewClient(cfg.ServerAddr,
+	// DialServer wraps the ClientConn in a self-healing client (serverConn): the watch loop
+	// Recreate()s it on persistent failure to force a FRESH DNS resolution — the real fix for
+	// the total-restart wedge (a stuck ClientConn caching a stale/dead server pod IP). The
+	// backoff cap + keepalive below help the common cases; Recreate is the backstop.
+	client, err := coverer.DialServer(cfg.ServerAddr, log,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithConnectParams(grpc.ConnectParams{
 			Backoff: backoff.Config{
@@ -117,8 +121,7 @@ func main() {
 		log.Error("dial sbw-server failed", "addr", cfg.ServerAddr, "err", err)
 		os.Exit(1)
 	}
-	defer func() { _ = conn.Close() }()
-	client := rpc.NewServerCovererClient(conn)
+	defer func() { _ = client.Close() }()
 
 	// The long-lived Report client-stream (stamps CovererId=self on every send).
 	rc := coverer.NewReportClient(ctx, self, client, log)

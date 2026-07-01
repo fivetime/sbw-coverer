@@ -16,7 +16,16 @@ import (
 const (
 	watchBackoffMin = 250 * time.Millisecond
 	watchBackoffMax = 5 * time.Second
+	// watchRecreateThreshold: after this many CONSECUTIVE Watch-open failures the underlying
+	// gRPC ClientConn is presumed stuck on a stale/dead server address it won't re-resolve
+	// (the total-restart wedge) — recreate the whole conn to force a fresh DNS resolution. A
+	// normal server rollout reconnects in far fewer tries, so this only fires on a real wedge.
+	watchRecreateThreshold = 5
 )
+
+// recreatable is the serverConn's self-heal hook (see serverconn.go); the watch loop type-
+// asserts c.client to it so a plain client (tests) is unaffected.
+type recreatable interface{ Recreate() }
 
 // edgeWorkerIdle is how long a per-edge relay worker may sit idle before it is reaped, so
 // edge churn cannot leak goroutines: ONE worker per ACTIVE edge, lazily created and
@@ -69,6 +78,7 @@ type watchConsumer struct {
 // initialCovererSync analog). Blocks until ctx is done.
 func (c *Coverer) runWatchClient(ctx context.Context) {
 	backoff := watchBackoffMin
+	fails := 0
 	for {
 		if ctx.Err() != nil {
 			return
@@ -79,13 +89,23 @@ func (c *Coverer) runWatchClient(ctx context.Context) {
 			SchemaVersion: int32(model.SchemaVersion),
 		})
 		if err != nil {
-			c.log.Warn("watch: open stream failed; backing off", "err", err, "backoff", backoff)
+			fails++
+			c.log.Warn("watch: open stream failed; backing off", "err", err, "backoff", backoff, "fails", fails)
+			if fails >= watchRecreateThreshold {
+				// The ClientConn is presumed wedged on a stale/dead server address (total-
+				// restart); recreate the whole conn to force a fresh DNS resolution.
+				if r, ok := c.client.(recreatable); ok {
+					r.Recreate()
+				}
+				fails = 0
+			}
 			if !sleepCtx(ctx, backoff) {
 				return
 			}
 			backoff = nextBackoff(backoff)
 			continue
 		}
+		fails = 0 // Watch opened → reset the recreate counter
 		wc := &watchConsumer{cov: c, agents: c.agents, workers: map[model.EdgeID]*edgeWorker{}}
 		// Run a per-connection context so the edge workers are reaped on a stream drop.
 		connCtx, cancel := context.WithCancel(ctx)
