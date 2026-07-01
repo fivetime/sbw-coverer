@@ -104,6 +104,39 @@ func TestSubscribePushDesired(t *testing.T) {
 	}
 }
 
+// PushDesiredRaw must relay the ORIGINAL bytes verbatim (non-chunked), so a state field
+// newer than this coverer's contract is not stripped on the way down to the agent —
+// symmetric to the uplink report-relay fix.
+func TestPushDesiredRawVerbatim(t *testing.T) {
+	s := New()
+	cli, done := dial(t, s)
+	defer done()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	stream, err := cli.Subscribe(ctx, &rpc.SubscribeRequest{EdgeId: "edge-2"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool { return len(s.Subscribers()) == 1 })
+
+	// Small (non-chunked) state whose raw bytes carry an unknown field.
+	raw := []byte(`{"schema_version":1,"edge_id":"edge-2","generation":9,"unknown_future_field":"keepme"}`)
+	st := model.EdgeDesiredState{SchemaVersion: model.SchemaVersion, EdgeID: "edge-2", Generation: 9}
+	if err := s.PushDesiredRaw("edge-2", st, raw); err != nil {
+		t.Fatalf("push: %v", err)
+	}
+	d, err := stream.Recv()
+	if err != nil {
+		t.Fatalf("recv: %v", err)
+	}
+	if d.Kind != rpc.Directive_DESIRED_STATE || d.Generation != 9 {
+		t.Errorf("directive: kind=%v gen=%d", d.Kind, d.Generation)
+	}
+	if !bytes.Equal(d.Payload, raw) {
+		t.Fatalf("payload not relayed verbatim:\n got %s\nwant %s", d.Payload, raw)
+	}
+}
+
 func TestRegisterReturnsCoverers(t *testing.T) {
 	assign := model.CovererAssignment{
 		EdgeID: "edge-2",

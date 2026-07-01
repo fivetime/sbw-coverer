@@ -245,26 +245,30 @@ func (c *watchConsumer) runWorker(ctx context.Context, w *edgeWorker) {
 func (c *watchConsumer) relayDirective(edge model.EdgeID, d *rpc.Directive) {
 	switch d.Kind {
 	case rpc.Directive_DESIRED_STATE:
+		// Decode only for the chunk decision + Generation; relay the server's ORIGINAL
+		// bytes verbatim (schema-skew immune — a state field newer than THIS coverer's
+		// contract must not be stripped on the way down, symmetric to the uplink report
+		// relay). See PushDesiredRaw.
 		var st model.EdgeDesiredState
 		if err := json.Unmarshal(d.Payload, &st); err != nil {
 			c.cov.log.Warn("seam relay: desired-state unmarshal failed", "edge", edge, "err", err)
 			return
 		}
-		c.relayErr(edge, "desired-state", c.agents.PushDesired(edge, st))
+		c.relayErr(edge, "desired-state", c.agents.PushDesiredRaw(edge, st, d.Payload))
 	case rpc.Directive_DESIRED_DELTA:
 		var dl model.EdgeDesiredDelta
 		if err := json.Unmarshal(d.Payload, &dl); err != nil {
 			c.cov.log.Warn("seam relay: desired-delta unmarshal failed", "edge", edge, "err", err)
 			return
 		}
-		c.relayErr(edge, "desired-delta", c.agents.PushDelta(edge, dl))
+		c.relayErr(edge, "desired-delta", c.agents.PushDeltaRaw(edge, dl, d.Payload))
 	case rpc.Directive_REHOME:
 		var a model.CovererAssignment
 		if err := json.Unmarshal(d.Payload, &a); err != nil {
 			c.cov.log.Warn("seam relay: rehome unmarshal failed", "edge", edge, "err", err)
 			return
 		}
-		c.relayErr(edge, "rehome", c.agents.PushRehome(edge, a))
+		c.relayErr(edge, "rehome", c.agents.PushRehomeRaw(edge, a, d.Payload))
 	default:
 		// FAILOVER / URGENT / stray DESIRED_STATE_CHUNK: pass the raw payload through.
 		c.relayErr(edge, "directive", c.agents.PushDirective(edge, d.Kind, d.Generation, d.Payload))

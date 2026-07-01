@@ -434,11 +434,27 @@ func (s *Server) Report(ctx context.Context, req *rpc.ReportRequest) (*rpc.Repor
 // returns the first push error (e.g. ErrNotSubscribed); a backpressure drop is
 // swallowed by push (returns nil) exactly as for a single DESIRED_STATE.
 func (s *Server) PushDesired(edge model.EdgeID, state model.EdgeDesiredState) error {
+	return s.PushDesiredRaw(edge, state, nil)
+}
+
+// PushDesiredRaw is PushDesired given the server's ORIGINAL directive bytes. For the
+// non-chunked (common) case it relays THOSE verbatim instead of re-marshaling the
+// decoded struct, so a field this coverer's contract does not know (a state field added
+// after this binary was built) is not silently stripped on the way down to the agent —
+// the same schema-skew immunity the uplink report relay has. raw==nil re-marshals (the
+// in-proc / test path). state is still decoded for the chunk decision + Generation; the
+// only case that cannot preserve an unknown TOP-LEVEL field is a snapshot large enough
+// to chunk (>chunkMembers), which is rebuilt from its known entries — rare + logged.
+func (s *Server) PushDesiredRaw(edge model.EdgeID, state model.EdgeDesiredState, raw []byte) error {
 	if memberCount(state) <= s.chunkMembers {
-		// Small edge: ONE plain DESIRED_STATE, identical to the pre-chunking path.
-		payload, err := json.Marshal(state)
-		if err != nil {
-			return err
+		// Small edge: ONE plain DESIRED_STATE. Relay the original bytes verbatim.
+		payload := raw
+		if payload == nil {
+			p, err := json.Marshal(state)
+			if err != nil {
+				return err
+			}
+			payload = p
 		}
 		return s.push(edge, &rpc.Directive{
 			Kind: rpc.Directive_DESIRED_STATE, Generation: state.Generation, Payload: payload,
@@ -482,9 +498,20 @@ func memberCount(st model.EdgeDesiredState) int {
 // lost silently. ErrNotSubscribed when the agent has no open stream (the create
 // path treats that as best-effort; the agent resyncs on its next Subscribe).
 func (s *Server) PushDelta(edge model.EdgeID, delta model.EdgeDesiredDelta) error {
-	payload, err := json.Marshal(delta)
-	if err != nil {
-		return err
+	return s.PushDeltaRaw(edge, delta, nil)
+}
+
+// PushDeltaRaw is PushDelta relaying the server's ORIGINAL delta bytes verbatim (schema-
+// skew immune, like PushDesiredRaw). raw==nil re-marshals. delta is decoded only for
+// Generation + the drop/resync bookkeeping in push().
+func (s *Server) PushDeltaRaw(edge model.EdgeID, delta model.EdgeDesiredDelta, raw []byte) error {
+	payload := raw
+	if payload == nil {
+		p, err := json.Marshal(delta)
+		if err != nil {
+			return err
+		}
+		payload = p
 	}
 	return s.push(edge, &rpc.Directive{
 		Kind: rpc.Directive_DESIRED_DELTA, Generation: delta.Generation, Payload: payload,
@@ -496,9 +523,19 @@ func (s *Server) PushDelta(edge model.EdgeID, delta model.EdgeDesiredDelta) erro
 // the agent has no open stream; it picks up the new assignment on its next
 // Register instead.
 func (s *Server) PushRehome(edge model.EdgeID, a model.CovererAssignment) error {
-	payload, err := json.Marshal(a)
-	if err != nil {
-		return err
+	return s.PushRehomeRaw(edge, a, nil)
+}
+
+// PushRehomeRaw is PushRehome relaying the server's ORIGINAL bytes verbatim (schema-skew
+// immune, like PushDesiredRaw). raw==nil re-marshals. a is unused when raw is provided.
+func (s *Server) PushRehomeRaw(edge model.EdgeID, a model.CovererAssignment, raw []byte) error {
+	payload := raw
+	if payload == nil {
+		p, err := json.Marshal(a)
+		if err != nil {
+			return err
+		}
+		payload = p
 	}
 	return s.push(edge, &rpc.Directive{Kind: rpc.Directive_REHOME, Payload: payload})
 }
