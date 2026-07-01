@@ -1,6 +1,7 @@
 package grpcsrv
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -238,26 +239,35 @@ func TestPushToUnsubscribedEdge(t *testing.T) {
 }
 
 func TestReport(t *testing.T) {
-	got := make(chan model.EdgeReport, 1)
-	s := New(WithReport(func(_ context.Context, r model.EdgeReport) error {
-		got <- r
+	type reported struct {
+		r   model.EdgeReport
+		raw []byte
+	}
+	got := make(chan reported, 1)
+	s := New(WithReport(func(_ context.Context, r model.EdgeReport, raw []byte) error {
+		got <- reported{r, raw}
 		return nil
 	}))
 	cli, done := dial(t, s)
 	defer done()
 
-	rep := model.EdgeReport{
-		SchemaVersion: model.SchemaVersion, EdgeID: "edge-2", Generation: 3,
-		Health: model.HealthReport{EdgeID: "edge-2", State: model.HealthHealthy},
-	}
-	payload, _ := json.Marshal(rep)
+	// A payload with a field this binary's model does NOT have (simulating a NEWER
+	// agent/server contract than this relay's — e.g. a future fault_kind). The relay must
+	// forward the bytes VERBATIM so the field is not stripped; the decoded struct drops it.
+	payload := []byte(`{"schema_version":1,"edge_id":"edge-2","generation":3,` +
+		`"health":{"edge_id":"edge-2","state":0},"unknown_future_field":"keepme"}`)
 	if _, err := cli.Report(context.Background(), &rpc.ReportRequest{EdgeId: "edge-2", Generation: 3, Payload: payload}); err != nil {
 		t.Fatal(err)
 	}
 	select {
-	case r := <-got:
-		if r.EdgeID != "edge-2" || r.Health.State != model.HealthHealthy {
-			t.Errorf("onReport got %+v", r)
+	case rr := <-got:
+		if rr.r.EdgeID != "edge-2" || rr.r.Health.State != model.HealthHealthy {
+			t.Errorf("onReport decoded %+v", rr.r)
+		}
+		// The decode necessarily lost the unknown field; the raw bytes MUST retain it so
+		// the coverer relays it unchanged (the fault_kind-stripping bug fix).
+		if !bytes.Contains(rr.raw, []byte("unknown_future_field")) {
+			t.Fatalf("raw payload not passed verbatim (unknown field stripped): %s", rr.raw)
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("onReport not called")

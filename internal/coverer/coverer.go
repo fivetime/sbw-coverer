@@ -13,7 +13,6 @@ package coverer
 
 import (
 	"context"
-	"encoding/json"
 	"log/slog"
 	"net/netip"
 	"slices"
@@ -91,16 +90,18 @@ func New(
 	// the server (unary). onSubscribe/onResync are best-effort (see their godoc).
 	c.agents = grpcsrv.New(
 		grpcsrv.WithLogger(log),
-		grpcsrv.WithReport(func(ctx context.Context, er model.EdgeReport) error {
-			payload, err := json.Marshal(er)
-			if err != nil {
-				return err
-			}
+		grpcsrv.WithReport(func(ctx context.Context, er model.EdgeReport, raw []byte) error {
+			// Relay the agent's report bytes VERBATIM — do NOT re-marshal the decoded
+			// struct. This coverer's contract may be older than the agent's/server's (it
+			// is a schema-agnostic relay); re-marshaling would drop any field it doesn't
+			// know (e.g. HealthReport.fault_kind added after this binary was built),
+			// silently breaking §4.2 typed-fault failover. EdgeID/Generation for the
+			// envelope come from the decode; the payload crosses unchanged.
 			return c.rc.Send(&rpc.CovererReport{
 				Kind:       rpc.CovererReport_AGENT_REPORT,
 				EdgeId:     string(er.EdgeID),
 				Generation: er.Generation,
-				Payload:    payload,
+				Payload:    raw,
 			})
 		}),
 		grpcsrv.WithOnSubscribe(c.onSubscribe),

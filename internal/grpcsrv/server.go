@@ -61,8 +61,13 @@ const defaultChunkMembers = 50_000
 // RegisterFunc handles an agent registration (e.g. ledger.InitAgent + registry).
 type RegisterFunc func(ctx context.Context, edge model.EdgeID, capacityBps uint64) error
 
-// ReportFunc handles an agent's uplink EdgeReport (soft-death fusion, capacity).
-type ReportFunc func(ctx context.Context, report model.EdgeReport) error
+// ReportFunc handles an agent's uplink EdgeReport (soft-death fusion, capacity). raw is
+// the agent's ORIGINAL report JSON — a relay (the coverer) must forward it VERBATIM
+// rather than re-marshal the decoded struct, so a field this binary's contract does not
+// know (e.g. a fault_kind added after this coverer was built) is never silently
+// stripped on the way to the server. report is provided for the fields the handler
+// needs (EdgeID/Generation); raw is what should cross the wire unchanged.
+type ReportFunc func(ctx context.Context, report model.EdgeReport, raw []byte) error
 
 // SubscribeFunc is called when an agent opens its downlink stream, so the
 // controller can push the agent's CURRENT desired state right away — the
@@ -406,7 +411,7 @@ func (s *Server) Report(ctx context.Context, req *rpc.ReportRequest) (*rpc.Repor
 		return nil, err
 	}
 	if s.onReport != nil {
-		if err := s.onReport(ctx, report); err != nil {
+		if err := s.onReport(ctx, report, req.Payload); err != nil {
 			return nil, err
 		}
 	}
