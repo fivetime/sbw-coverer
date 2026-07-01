@@ -30,6 +30,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/backoff"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/keepalive"
 
 	"github.com/fivetime/sbw-coverer/internal/coverer"
 	"github.com/fivetime/sbw-coverer/internal/guard"
@@ -98,6 +99,18 @@ func main() {
 				MaxDelay:   5 * time.Second,
 			},
 			MinConnectTimeout: 5 * time.Second,
+		}),
+		// Keepalive is what UN-WEDGES a total-restart: the Watch server-stream idles between
+		// pushes, and a half-open ClientConn (Watch created but never truly connected — server
+		// never got it) leaves the coverer blocked in stream.Recv() forever with no error to
+		// break the loop and retry. Pinging every 20s (Timeout 10s) detects the dead transport,
+		// closes it → Recv errors → the watch loop reconnects. PermitWithoutStream so the ping
+		// runs even while the conn is (from gRPC's view) streamless. 20s > server MinTime 10s,
+		// so no GOAWAY.
+		grpc.WithKeepaliveParams(keepalive.ClientParameters{
+			Time:                20 * time.Second,
+			Timeout:             10 * time.Second,
+			PermitWithoutStream: true,
 		}),
 	)
 	if err != nil {
