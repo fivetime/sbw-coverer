@@ -28,6 +28,7 @@ import (
 	"github.com/fivetime/sbw-contract/model"
 	"github.com/fivetime/sbw-contract/rpc"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/backoff"
 	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/fivetime/sbw-coverer/internal/coverer"
@@ -80,7 +81,25 @@ func main() {
 
 	// Dial the sbw-server (rpc.ServerCoverer). NO etcd / YugabyteDB client is ever opened
 	// — that is the whole point of the split.
-	conn, err := grpc.NewClient(cfg.ServerAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	//
+	// ConnectParams CAP the reconnect backoff at 5s (gRPC default MaxDelay is 120s): after a
+	// total control-plane restart the server pod is replaced, and a bare dial's ClientConn can
+	// back off up to ~2min before retrying — so the coverer's Watch/Report stay wedged (the
+	// app-level 5s Watch backoff is moot when the underlying ClientConn is in a 120s backoff)
+	// until a manual pod restart resets it. Capping it lets the coverer re-establish within ~5s
+	// of the server becoming reachable.
+	conn, err := grpc.NewClient(cfg.ServerAddr,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithConnectParams(grpc.ConnectParams{
+			Backoff: backoff.Config{
+				BaseDelay:  250 * time.Millisecond,
+				Multiplier: 1.6,
+				Jitter:     0.2,
+				MaxDelay:   5 * time.Second,
+			},
+			MinConnectTimeout: 5 * time.Second,
+		}),
+	)
 	if err != nil {
 		log.Error("dial sbw-server failed", "addr", cfg.ServerAddr, "err", err)
 		os.Exit(1)
