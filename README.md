@@ -7,7 +7,7 @@
 - **绝不碰 YugabyteDB / etcd**;无状态(覆盖与 desired-state 都从 server re-sync)→ 随边数水平扩。
 
 ## 状态
-**Scaffold(§8 step 2)**:仅 `go.mod` + 骨架 `cmd/sbw-coverer`。§8 step 3 将把 coverer 侧包(`ribtap`/`shard`/`coverage`/`liveness`/`guard`/`deathvote`/`ribevent`/`grpcsrv`)从 `sbw-controller` 迁入(并加 `gobgp` 依赖,`replace => ../gobgp`),届时 `sbw-controller` 退役。共享契约/模型在 `sbw-contract`。
+**已上线(§8 拆分完成)**:coverer 侧包(`ribtap`/`shard`/`coverage`/`liveness`/`guard`/`deathvote`/`ribevent`/`grpcsrv`)已从单体迁入(含 `gobgp` 依赖,`replace => ../gobgp`),CI 全绿,并在 k3s lab 端到端验证(K=2 coverer 分配/homing + failover + 恢复再平衡)。单体 `sbw-controller` 已退役(仓库归档只读)。共享契约/模型在 `sbw-contract`;全局脑半在 `sbw-server`。
 
 ```bash
 go build ./...        # 编译

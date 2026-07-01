@@ -49,8 +49,7 @@ require (
 
 replace github.com/fivetime/sbw-contract => ../sbw-contract
 
-// NOTE(§8 step3): the RIB-tap migration pulls github.com/osrg/gobgp/v4 (ribtap is the
-// sole importer), pinned to the same v4.6.0 sbw-controller uses (BFD microsecond units,
-// multihop dual-listen). The local replace points at the sibling ../gobgp clone — CI must
-// clone it exactly as the controller build does, or the replace dangles.
+// NOTE(§8): the RIB-tap pulls github.com/osrg/gobgp/v4 (ribtap is the sole importer),
+// pinned to v4.6.0 (BFD microsecond units, multihop dual-listen). The local replace points
+// at the sibling ../gobgp clone — CI must clone it, or the replace dangles.
 replace github.com/osrg/gobgp/v4 => ../gobgp
