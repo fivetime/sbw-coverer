@@ -85,6 +85,11 @@ type BGPConfig struct {
 	BFDRxMs       uint32 `json:"bfd_rx_ms"`      // required min RX (ms); 0 → 300
 	BFDMultiplier uint32 `json:"bfd_multiplier"` // detection multiplier; 0 → 3
 	BFDMultihop   bool   `json:"bfd_multihop"`   // RFC 5883 multihop (UDP 4784) + eBGP-multihop
+	// BindInterface pins the tap BGP+BFD sockets to a named interface (SO_BINDTODEVICE).
+	// REQUIRED for multihop BFD on a multi-homed coverer (flannel eth0 + ctrl-tap): set to
+	// the ctrl-tap interface name (lab: "ctap") so BFD egresses the right device instead of
+	// the default route. "" = no bind. See ribtap.Config.BindInterface.
+	BindInterface string `json:"bind_interface"`
 }
 
 // EdgePeer maps one edge's BIRD tap session to its logical edge id — the
@@ -167,6 +172,7 @@ func (c *Config) applyEnv() error {
 	if c.BGP.BFDMultihop, err = config.Bool("BGP_BFD_MULTIHOP", c.BGP.BFDMultihop); err != nil {
 		return err
 	}
+	c.BGP.BindInterface = config.String("BGP_BIND_INTERFACE", c.BGP.BindInterface)
 
 	c.Sharding.ReplicaID = config.String("SHARDING_REPLICA_ID", c.Sharding.ReplicaID)
 	if c.Sharding.K, err = config.Int("SHARDING_K", c.Sharding.K); err != nil {

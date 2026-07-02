@@ -48,6 +48,16 @@ type Config struct {
 	// dual-listen 3784+4784). No effect unless BFDEnabled.
 	BFDMultihop bool
 
+	// BindInterface pins the tap session's BGP + BFD sockets to a named interface via
+	// SO_BINDTODEVICE (GoBGP api.Transport.BindInterface → oc.Transport.Config.BindInterface
+	// → bfdServer.AddPeer). REQUIRED for MULTIHOP BFD on a MULTI-HOMED coverer: the coverer
+	// has flannel eth0 (default route) + the ctrl-tap interface (the BGP source), and without
+	// binding, GoBGP's BFD UDP(4784) egresses via the default route (eth0), never reaching the
+	// edge over ctrl-tap → BFD stuck Down → BFD-triggered BGP reset → tap flap → false
+	// hard-quorum death. Set to the ctrl-tap interface name (lab: "ctap"). "" = no bind
+	// (single-homed / legacy). No effect unless the peer runs BFD.
+	BindInterface string
+
 	// ActiveDial makes the controller INITIATE the tap session instead of waiting
 	// for the edge BIRD to connect (TODO-liveness L-05). Under sharding, a
 	// controller peers with exactly the edges it currently covers and drops them
@@ -197,7 +207,7 @@ func (s *Server) AddPeer(ctx context.Context, p Peer) error {
 	if asn == 0 {
 		asn = s.cfg.ASN // iBGP tap
 	}
-	transport := &api.Transport{PassiveMode: !s.cfg.ActiveDial}
+	transport := &api.Transport{PassiveMode: !s.cfg.ActiveDial, BindInterface: s.cfg.BindInterface}
 	// Active-dial (sharding, L-05): source the outbound session from this replica's
 	// RouterID so co-located replicas (K=2 on one test host sharing a segment) each
 	// dial the edge from a distinct address instead of both from the interface's

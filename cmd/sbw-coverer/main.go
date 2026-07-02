@@ -164,6 +164,7 @@ func main() {
 		BFDRxMs:       cfg.BGP.BFDRxMs,
 		BFDMultiplier: cfg.BGP.BFDMultiplier,
 		BFDMultihop:   cfg.BGP.BFDMultihop,
+		BindInterface: cfg.BGP.BindInterface,
 		ActiveDial:    true,
 	}, log)
 	if err != nil {
